@@ -25,13 +25,15 @@ class TaskController extends Controller
         ]);
     }
 
-    public function store(StoreTaskRequest $request)
+    public function store(StoreTaskRequest $request): JsonResponse
     {
-        $this->service->create($request->validated());
+        $task = $this->service->create($request->validated());
 
-        return redirect()->back()->with('success', 'Task created successfully!');
+        return response()->json([
+            'message' => 'Task created successfully!',
+            'data' => $task
+        ], 201);
     }
-
     public function getAllTasks(Request $request): JsonResponse
     {
         $search = $request->get('search');

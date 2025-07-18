@@ -1,6 +1,5 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { router } from '@inertiajs/vue3'
 import axios from 'axios'
 import type {
   TaskForm,
@@ -62,18 +61,22 @@ export const useTaskStore = defineStore('tasks', () => {
     return Object.keys(formErrors.value).length === 0
   }
 
-  const submitForm = (): void => {
+  const submitForm = async (): Promise<void> => {
     if (!validateForm()) return
 
     isSubmitting.value = true
+    formErrors.value = {}
 
-    router.post('/tasks', form.value, {
-      onSuccess: () => {
+    try {
+      const response = await axios.post('/api/tasks', form.value)
+      if (response.data && response.data.data) {
+        addTask(response.data.data)
         resetForm()
-        // Refresh the tasks list after creating a new task
-        fetchTasks(1, currentSearch.value)
-      },
-      onError: (serverErrors) => {
+        await fetchTasks(1, currentSearch.value)
+      }
+    } catch (err: any) {
+      if (err.response?.status === 422) {
+        const serverErrors = err.response.data.errors || {}
         const normalizedErrors: Record<string, string[]> = {}
 
         for (const key in serverErrors) {
@@ -82,11 +85,13 @@ export const useTaskStore = defineStore('tasks', () => {
         }
 
         formErrors.value = normalizedErrors
-      },
-      onFinish: () => {
-        isSubmitting.value = false
+      } else {
+        error.value = err.response?.data?.message || 'Failed to create task'
+        console.error('Error creating task:', err)
       }
-    })
+    } finally {
+      isSubmitting.value = false
+    }
   }
 
   // Tasks list methods
@@ -193,7 +198,6 @@ export const useTaskStore = defineStore('tasks', () => {
     }
   }
 
-  // Computed properties
   const hasNextPage = computed((): boolean =>
     pagination.value.current_page < pagination.value.last_page
   )

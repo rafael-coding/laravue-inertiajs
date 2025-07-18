@@ -1,9 +1,10 @@
 <?php
 
-namespace Database\Seeders;
+namespace Database\seeders;
 
-use App\Models\User;
-// use Illuminate\Database\Console\Seeds\WithoutModelEvents;
+use Database\Seeders\CategorySeeder;
+use Database\Seeders\PrioritySeeder;
+use Database\Seeders\TaskSeeder;
 use Illuminate\Database\Seeder;
 
 class DatabaseSeeder extends Seeder
@@ -15,5 +16,6 @@ class DatabaseSeeder extends Seeder
     {
         $this->call(CategorySeeder::class);
         $this->call(PrioritySeeder::class);
+        $this->call(TaskSeeder::class);
     }
 }

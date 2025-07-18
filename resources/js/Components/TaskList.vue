@@ -123,7 +123,7 @@
           <button
             @click="changePage(pagination.current_page - 1)"
             :disabled="pagination.current_page === 1"
-            class="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            class="cursor-pointer px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Previous
           </button>
@@ -133,7 +133,7 @@
               v-if="page !== '...'"
               @click="changePage(page)"
               :class="[
-                'px-3 py-2 text-sm font-medium rounded-md',
+                'cursor-pointer px-3 py-2 text-sm font-medium rounded-md',
                 page === pagination.current_page
                   ? 'bg-blue-600 text-white'
                   : 'text-gray-500 bg-white border border-gray-300 hover:bg-gray-50'
@@ -147,7 +147,7 @@
           <button
             @click="changePage(pagination.current_page + 1)"
             :disabled="pagination.current_page === pagination.last_page"
-            class="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            class="cursor-pointer px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Next
           </button>
