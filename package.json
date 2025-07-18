@@ -16,6 +16,7 @@
     },
     "dependencies": {
         "@inertiajs/vue3": "^2.0.14",
-        "@vitejs/plugin-vue": "^6.0.0"
+        "@vitejs/plugin-vue": "^6.0.0",
+        "pinia": "^3.0.3"
     }
 }
