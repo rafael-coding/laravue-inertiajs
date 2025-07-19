@@ -1,6 +1,7 @@
 import { createApp, h } from 'vue'
 import { createInertiaApp } from '@inertiajs/vue3'
 import { createPinia } from 'pinia'
+import './bootstrap';
 
 createInertiaApp({
   title: () => 'Laravue Inertia',

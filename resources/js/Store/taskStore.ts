@@ -10,6 +10,13 @@ import type {
   Pagination
 } from '../Types'
 
+declare global {
+  interface Window {
+    Echo: any;
+    Pusher: any;
+  }
+}
+
 export const useTaskStore = defineStore('tasks', () => {
   // Form state
   const form = ref<TaskForm>({
@@ -36,6 +43,204 @@ export const useTaskStore = defineStore('tasks', () => {
     to: 0
   })
   const currentSearch = ref('')
+
+  // Status update state
+  const updatingTasks = ref<Set<number>>(new Set())
+
+  // WebSocket connection state
+  const isWebSocketConnected = ref(false)
+  let echoChannel: any = null
+  let connectionCheckInterval: any = null
+
+  // Polling state
+  const isPollingActive = ref(false)
+  let pollingInterval: any = null
+
+  // Update task in local store
+  const updateTaskInStore = (updatedTask: Task) => {
+    const taskIndex = tasks.value.findIndex(task => task.id === updatedTask.id)
+    if (taskIndex !== -1) {
+      tasks.value[taskIndex] = updatedTask
+      console.log('Task updated in store:', updatedTask)
+    } else {
+      console.log('Task not found in current page:', updatedTask.id)
+    }
+  }
+
+  // Polling system
+  const startPollingFallback = () => {
+    if (isPollingActive.value) {
+      console.log('Polling already active')
+      return
+    }
+
+    console.log('Starting polling for real-time updates')
+    isPollingActive.value = true
+
+    pollingInterval = setInterval(async () => {
+      try {
+        const response = await axios.get('/api/tasks/updates', {
+          params: { last_check: Math.floor(Date.now() / 1000) - 5 }
+        })
+
+        if (response.data && response.data.updates) {
+          response.data.updates.forEach((update: any) => {
+            if (update.payload && update.payload.task) {
+              updateTaskInStore(update.payload.task)
+            }
+          })
+        }
+      } catch (error) {
+        console.error('Polling error:', error)
+      }
+    }, 3000) // Poll every 3 seconds
+  }
+
+  const stopPollingFallback = () => {
+    if (pollingInterval) {
+      clearInterval(pollingInterval)
+      pollingInterval = null
+      isPollingActive.value = false
+      console.log('Polling fallback stopped')
+    }
+  }
+
+  // Initialize WebSocket connection with fallback
+  const initializeWebSocket = () => {
+    console.log('Initializing connection...')
+
+    // For local development, always use polling
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      console.log('Local environment detected, using polling fallback')
+      startPollingFallback()
+      return
+    }
+
+    // For production, try WebSocket first
+    if (typeof window === 'undefined' || !window.Echo) {
+      console.warn('WebSocket not available, using polling fallback')
+      startPollingFallback()
+      return
+    }
+
+    try {
+      // Clean previous connection if exists
+      cleanupWebSocket()
+
+      // Connect to channel
+      echoChannel = window.Echo.channel('tasks')
+      console.log('Echo channel created:', echoChannel)
+
+      // Listen to events
+      echoChannel.listen('.task.status.updated', (data: any) => {
+        console.log('WebSocket event received:', data)
+
+        if (data.task) {
+          updateTaskInStore(data.task)
+          // Stop polling if WebSocket works
+          stopPollingFallback()
+        }
+      })
+
+      // Monitor connection state
+      if (window.Echo.connector && window.Echo.connector.pusher) {
+        const pusher = window.Echo.connector.pusher
+
+        pusher.connection.bind('connected', () => {
+          isWebSocketConnected.value = true
+          console.log('WebSocket connected successfully')
+          stopPollingFallback() // Stop polling if WebSocket connects
+        })
+
+        pusher.connection.bind('disconnected', () => {
+          isWebSocketConnected.value = false
+          console.log('WebSocket disconnected')
+          startPollingFallback() // Start polling if disconnected
+        })
+
+        pusher.connection.bind('error', (error: any) => {
+          isWebSocketConnected.value = false
+          console.error('WebSocket error:', error)
+          startPollingFallback() // Start polling on error
+        })
+
+        pusher.connection.bind('state_change', (states: any) => {
+          console.log('WebSocket state change:', states)
+          isWebSocketConnected.value = states.current === 'connected'
+
+          if (states.current !== 'connected') {
+            startPollingFallback()
+          } else {
+            stopPollingFallback()
+          }
+        })
+      }
+
+      // Check connection periodically
+      startConnectionCheck()
+
+      // Fallback: if after 5 seconds it didn't connect, start polling
+      setTimeout(() => {
+        if (!isWebSocketConnected.value) {
+          console.log('WebSocket timeout, starting polling fallback')
+          startPollingFallback()
+        }
+      }, 5000)
+
+    } catch (error) {
+      console.error('Failed to initialize WebSocket:', error)
+      isWebSocketConnected.value = false
+      startPollingFallback()
+    }
+  }
+
+  // Check connection periodically
+  const startConnectionCheck = () => {
+    if (connectionCheckInterval) {
+      clearInterval(connectionCheckInterval)
+    }
+
+    connectionCheckInterval = setInterval(() => {
+      if (window.Echo && window.Echo.connector && window.Echo.connector.pusher) {
+        const state = window.Echo.connector.pusher.connection.state
+        const wasConnected = isWebSocketConnected.value
+        isWebSocketConnected.value = state === 'connected'
+
+        // If lost connection, start polling
+        if (wasConnected && !isWebSocketConnected.value) {
+          startPollingFallback()
+        }
+        // If reconnected, stop polling
+        else if (!wasConnected && isWebSocketConnected.value) {
+          stopPollingFallback()
+        }
+      }
+    }, 5000) // Check every 5 seconds
+  }
+
+  // Cleanup WebSocket connection
+  const cleanupWebSocket = () => {
+    console.log('Cleaning up WebSocket connection...')
+
+    if (connectionCheckInterval) {
+      clearInterval(connectionCheckInterval)
+      connectionCheckInterval = null
+    }
+
+    stopPollingFallback()
+
+    if (echoChannel) {
+      try {
+        window.Echo.leaveChannel('tasks')
+        echoChannel = null
+        console.log('WebSocket channel cleaned up')
+      } catch (error) {
+        console.error('Error cleaning up WebSocket:', error)
+      }
+    }
+
+    isWebSocketConnected.value = false
+  }
 
   // Form methods
   const resetForm = (): void => {
@@ -167,21 +372,29 @@ export const useTaskStore = defineStore('tasks', () => {
   }
 
   const updateTaskStatus = async (taskId: number, newStatus: TaskStatus): Promise<void> => {
-    try {
-      loading.value = true
-      // Implementar quando tiver a rota de atualização
-      // await axios.patch(`/api/tasks/${taskId}/status`, { status: newStatus })
+    console.log(`Updating task ${taskId} to status: ${newStatus}`)
 
-      // Atualizar localmente por enquanto
-      const taskIndex = tasks.value.findIndex(task => task.id === taskId)
-      if (taskIndex !== -1) {
-        tasks.value[taskIndex].status = newStatus
+    // Add to updating set
+    updatingTasks.value.add(taskId)
+
+    try {
+      const response = await axios.patch(`/api/tasks/${taskId}/status`, {
+        status: newStatus
+      })
+
+      console.log('Task status updated successfully:', response.data)
+
+      // If neither WebSocket nor polling are working, update locally
+      if (!isWebSocketConnected.value && !isPollingActive.value && response.data && response.data.data) {
+        updateTaskInStore(response.data.data)
+        console.log('Task updated locally (no real-time connection)')
       }
     } catch (err: any) {
-      error.value = err.response?.data?.message || 'Failed to update task status'
-      console.error('Error updating task status:', err)
+      console.error('Failed to update task status:', err)
+      throw new Error(err.response?.data?.message || 'Failed to update task status')
     } finally {
-      loading.value = false
+      // Remove from updating set
+      updatingTasks.value.delete(taskId)
     }
   }
 
@@ -198,6 +411,11 @@ export const useTaskStore = defineStore('tasks', () => {
     }
   }
 
+  const isTaskUpdating = (taskId: number): boolean => {
+    return updatingTasks.value.has(taskId)
+  }
+
+  // Computed properties
   const hasNextPage = computed((): boolean =>
     pagination.value.current_page < pagination.value.last_page
   )
@@ -223,6 +441,13 @@ export const useTaskStore = defineStore('tasks', () => {
     pagination,
     currentSearch,
 
+    // Status update state
+    updatingTasks,
+
+    // WebSocket state
+    isWebSocketConnected,
+    isPollingActive,
+
     // Form methods
     resetForm,
     submitForm,
@@ -237,6 +462,11 @@ export const useTaskStore = defineStore('tasks', () => {
     updateTaskStatus,
     addTask,
     removeTask,
+    isTaskUpdating,
+
+    // WebSocket methods
+    initializeWebSocket,
+    cleanupWebSocket,
 
     // Computed properties
     hasNextPage,
